@@ -46,6 +46,7 @@ describe("theme-worker", () => {
 
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 		expect(fetchSpy.mock.calls[0][0].url).toBe("https://infinitynikki.wiki/Main_Page");
+		expect(fetchSpy.mock.calls[0][1]).toBeUndefined();
 
 		const body = await response.text();
 		expect(response.status).toBe(200);
@@ -126,21 +127,16 @@ describe("theme-worker", () => {
 		expect(response.headers.get("Vary")).toBeNull();
 	});
 
-	it("bypasses edge caching when session cookie is present", async () => {
-		const fetchSpy = mockUpstreamHtml(VECTOR_HTML);
+	it("returns 502 when origin fetch throws", async () => {
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
 
-		const request = new Request("http://localhost:8787/Main_Page", {
-			headers: { Cookie: "wiki_session=abc123; mode=dark" },
-		});
+		const request = new Request("http://localhost:8787/Main_Page");
 		const ctx = createExecutionContext();
-		await worker.fetch(request, env, ctx);
+		const response = await worker.fetch(request, env, ctx);
 		await waitOnExecutionContext(ctx);
 
-		expect(fetchSpy.mock.calls[0][1]).toEqual({
-			cf: {
-				cacheEverything: false,
-				cacheTtl: -1,
-			},
-		});
+		expect(response.status).toBe(502);
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.text()).toBe("Origin unreachable");
 	});
 });
